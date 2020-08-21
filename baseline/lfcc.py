@@ -22,20 +22,21 @@ class LFCC(object):
     def get_sampling_rate(self):
         return self._sr
     
-    def get_mfcc(self, p=0.97, nchannels=24, nceps=12):
+    def get_lfcc(self, p=0.97, nfft=512, nchannels=24, nceps=12):
         
         # define a convolute preEmphasis filter
         self._waveform = self._preEmphasis(self._waveform, p)
         #print(type(self._waveform))
         
         # define a hamming window
-        self._nfft = 512
+        self._nfft = nfft
         hammingWindow = np.hamming(self._nfft)
         
+        self._hop_length = self._nfft//2
         # make a spectrogram
-        spec = self._stft(wave=self._waveform, window=hammingWindow, step=self._nfft//2)
+        spec = self._stft(wave=self._waveform, window=hammingWindow, step=self._hop_length)
         # n: fft_bin, d: cycle time
-        freq = np.fft.fftfreq(n=self._nfft, d=1.0/self._sr)[:self._nfft//2]
+        freq = np.fft.fftfreq(n=self._nfft//2, d=1.0/self._sr)
 
         """
         for i, sp in enumerate(spec):
@@ -61,24 +62,26 @@ class LFCC(object):
 
         #linearfilterbank
         df = self._sr / self._nfft # frequency resolution
+        print("sampling rate: {}, freq resolution: {}".format(self._sr, df))
         filterbank = self._linearFilterBank(nchannels=nchannels)
         print(filterbank.shape)
+
         """
         for c in np.arange(0, nchannels):
             plt.plot(np.arange(0, self._nfft//2) * df, filterbank[c])
         plt.show()
         """
         # apply linearfilterbanks for each vector, then sum all and take log
-        mspec = np.log10(np.dot(spec, filterbank.T))
-        print("mspec:", mspec.shape)
+        linear_spec = np.log10(np.dot(spec, filterbank.T))
+        print("linear_spec:", linear_spec.shape)
         
-        # obtain a cepstram by applying discrete cosine transform to log-linear spectrogram
-        cepstram = self._dct(mspec).T
+        # obtain a cepstrum by applying discrete cosine transform to log-linear spectrum
+        cepstrum = self._dct(linear_spec).T
         
-        # cepstram = (n-dimensional feature, shift), so select the number of feature to use
-        mfccs = cepstram[:nceps]
+        # cepstrum = (n-dimensional feature, shift), nceps is the number of features to use
+        lfccs = cepstrum[:nceps]
 
-        return mfccs
+        return lfccs
 
     #pre-emphasis filter
     def _preEmphasis(self, signal, p):
@@ -108,7 +111,7 @@ class LFCC(object):
         #padded_wave = np.zeros(windowlen+(shift*step))
         #padded_wave[:wavelen] = wave # waveform has to be reformed to fit the sliding window 
         
-        X = np.array([]) # X: spectrogram will have to be (shift, windowlen)
+        X = np.array([]) # X: spectrum will have to be (shift, windowlen)
         for m in range(shift):
             start = step * m
             x = np.fft.fft(wave[start:start+windowlen]*window, norm='ortho')[:self._nfft//2]
@@ -120,10 +123,11 @@ class LFCC(object):
             if m == 120:
                 plt.plot(np.arange(0, windowlen), wave[start:start+windowlen]*window)
                 plt.show()
-                plt.plot(np.fft.fftfreq(n=self._nfft, d=1.0/self._sr)[:self._nfft//2], np.abs(x))
+                plt.plot(np.fft.fftfreq(n=self._nfft, d=1.0/self._sr)[:self._nfft//2], np.abs(x)**2)
                 plt.show()
             """
         print(X.shape)
+        # return power-spectrum
         return np.abs(X)**2/self._nfft
     
     #generate linearfilterbank
@@ -154,6 +158,12 @@ class LFCC(object):
 #end of class LFCC
 
 if __name__ == "__main__":
-    lfcc = LFCC("utterance3.wav").get_mfcc()
+    #import librosa
 
-    print(lfcc, lfcc.shape)
+    lfcc = LFCC("utterance3.wav").get_lfcc().T
+    
+#    y, sr = librosa.load("utterance3.wav", sr=22050)
+#    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=12).T
+
+    print(lfcc[100], lfcc.shape)
+#   print(mfcc[100], mfcc.shape)
